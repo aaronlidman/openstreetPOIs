@@ -34,10 +34,21 @@ def prep_args():
     return parser
 
 args = vars(prep_args().parse_args())
+args['out'] = args['out'] + '.geojson'
 print args
 
 
-def leveldb_prep():
+def file_prep(db_only=False):
+    if not db_only:
+        if os.path.isfile(args['out']):
+            if args['overwrite']:
+                os.remove(args['out'])
+            else:
+                print 'overwrite conflict with file: ' + args['out']
+                print 'remove/rename ' + args['out']
+                + ', name a different output file with --out, or add the --overwrite option'
+                sys.exit()
+
     if os.path.isdir('nodes.ldb'):
         shutil.rmtree('nodes.ldb')
     if os.path.isdir('ways.ldb'):
@@ -55,7 +66,9 @@ class Ways():
         for id, tags, refs in ways:
             # circular ways only
             if len(tags) and refs[0] == refs[-1]:
-                self.db.put(str(id), json.dumps([refs, tags]))
+                id = str(id)
+                tags['OSM_ID'] = 'way/' + id
+                self.db.put(id, json.dumps([refs, tags]))
                 self.refs.update(refs)
                 self.count = self.count + 1
 
@@ -68,28 +81,36 @@ class Ways():
 
 
 class Nodes():
-    count = 0
-    needed = set()
+    batch = []
 
-    def __init__(self, db):
+    def __init__(self, db, file):
         self.db = db.write_batch()
+        self.file = file
 
     def node(self, nodes):
         for id, tags, coords in nodes:
-            if id in self.needed:
+            if len(tags):
                 lat, lon = coords
-                lat = "%.6f" % lat
-                lon = "%.6f" % lon
-                self.db.put(str(id), json.dumps([[lat, lon], tags]))
-                self.count = self.count + 1
+                lat = "%.5f" % lat
+                lon = "%.5f" % lon
+                tags['OSM_ID'] = 'node/' + str(id)
 
-        if self.count > 500000:
-            # ~30MB per million in mem
+                feature = {
+                    'type': 'Feature',
+                    'geometry': {
+                        'type': 'Point',
+                        'coordinates': [float(lat), float(lon)]},
+                    'properties': tags
+                }
+
+                self.batch.append(json.dumps(feature) + '\n,\n')
+
+        if len(self.batch) > 10000:
             self.batch_write()
 
     def batch_write(self):
-        self.db.write()
-        self.count = 0
+        self.file.write(''.join(self.batch))
+        self.batch = []
 
 
 class Coords():
@@ -101,10 +122,9 @@ class Coords():
 
     def coord(self, coords):
         for id, lat, lon in coords:
-            # coords
             if id in self.needed:
-                lat = "%.6f" % lat
-                lon = "%.6f" % lon
+                lat = "%.5f" % lat
+                lon = "%.5f" % lon
                 self.db.put(str(id), json.dumps([[lat, lon]]))
                 self.count = self.count + 1
 
@@ -134,34 +154,81 @@ def tag_filter(tags):
         del tags[tags.keys()[0]]
 
 
+def process(output):
+    process.writeDone = False
+
+    queue = multiprocessing.Queue()
+    pool = multiprocessing.Pool(None, include_queue, [queue], 100000)
+    go = pool.map_async(buildPOIs, waysDB.iterator(), callback=all_done)
+
+    print 'started pool map'
+    # let the processes get started and queues fill up a bit
+    time.sleep(1)
+
+    while True:
+        print 'round and'
+        if write(output, queue):
+            break
+
+    go.wait()
+    pool.close()
+    pool.join()
+
+
+def include_queue(queue):
+    print 'include_queue go'
+    buildPOIs.queue = queue
+
+
+def all_done(necessary_arg):
+    process.writeDone = True
+
+
+def buildPOIs((id, json)):
+    print json
+
+
+def write(file, queue):
+    # no .qsize on OS X means we use sleep(), lame
+    toFile = ''
+
+    while True:
+        try:
+            toFile += queue.get_nowait()
+        except:
+            file.write(toFile)
+            break
+
+    if process.writeDone:
+        return True
+    else:
+        time.sleep(5)
+
+
 if __name__ == '__main__':
     prW = cProfile.Profile()
     prW.enable()
     shapely.speedups.enable()
 
     # in order of prevalence, http://taginfo.openstreetmap.org/keys
-    # I went through the first 25 pages (500 keys) and 1 page of name:* keys
-        # not sure about those name tags, want 'name' to be enough
+    # I went through the first 25 pages (500 keys)
     wantedKeys = frozenset((
         'building', 'name', 'addr:housenumber', 'addr:street', 'addr:city',
         'addr:postcode', 'addr:state', 'natural', 'landuse', 'amenity', 'railway',
-        'leisure', 'shop', 'man_made', 'name:en', 'sport', 'religion', 'wheelchair',
-        'parking', 'alt_name', 'public_transport', 'website', 'wikipedia', 'name:ru',
-        'water', 'historic', 'denomination', 'url', 'name:ja', 'phone', 'cuisine',
-        'aeroway', 'name:fr', 'opening_hours', 'bus', 'name:de', 'emergency',
-        'information', 'site', 'bench', 'wetland', 'toll', 'atm', 'golf', 'brand',
-        'aerialway', 'name:ar', 'name:ar1', 'name:uk', 'name:zh', 'name:ko', 'name:be',
-        'name:sv', 'name:he', 'name:fi', 'name:sr', 'name:ja_rm', 'name:sr-Latn'
+        'leisure', 'shop', 'man_made', 'sport', 'religion', 'wheelchair', 'parking',
+        'alt_name', 'public_transport', 'website', 'wikipedia', 'water', 'historic',
+        'denomination', 'url', 'phone', 'cuisine', 'aeroway', 'opening_hours',
+        'bus', 'emergency', 'information', 'site', 'bench', 'wetland', 'toll',
+        'atm', 'golf', 'brand', 'aerialway'
     ))
+
 
     # keys from wantedKeys that are useless by themselves, they need some context
     # basically if that was the only tag, there would no useful way to render it
     lonelyKeys = frozenset((
         'building', 'name', 'addr:street', 'addr:city', 'addr:postcode', 'addr:state',
-        'natural', 'landuse', 'name:en', 'wheelchair', 'alt_name', 'website', 'name:ru', 'water',
-        'url', 'name:ja', 'phone', 'name:fr', 'opening_hours', 'name:de', 'wetland',
-        'brand', 'name:ar', 'name:ar1', 'name:uk', 'name:zh', 'name:ko', 'name:be',
-        'name:sv', 'name:he', 'name:fi', 'name:sr', 'name:ja_rm', 'name:sr_Latn'
+        'natural', 'landuse', 'wheelchair', 'alt_name', 'website', 'water', 'url',
+        'phone', 'opening_hours', 'wetland', 'brand'
     ))
 
     # tag values that aren't really worth bothering over, mostly because they're very common
@@ -169,20 +236,23 @@ if __name__ == '__main__':
         # only include tags with values x, y, z with a few exceptions like 'name' key
     dropTags = {
         '*': {'no'},
-        'railway': {'level_crossing'},
         'aeroway': {'taxiway'},
-        'railway': {'rail', 'abandoned', 'disused', 'switch'},
+        'railway': {'rail', 'abandoned', 'disused', 'switch', 'level_crossing',
+        'buffer_stop'},
         'man_made': {'pipeline'},
         'amenity': {'parking'}
     }
 
-    leveldb_prep()
+    file_prep()
     waysDB = plyvel.DB('ways.ldb', create_if_missing=True, error_if_exists=True)
     nodesDB = plyvel.DB('nodes.ldb', create_if_missing=True, error_if_exists=True)
     # nodes and coords are in nodesDB, just with and without tags
 
+    output = open(args['out'], 'a')
+    output.write('{"type": "FeatureCollection", "features": [\n')
+
     ways = Ways(waysDB)
-    nodes = Nodes(nodesDB)
+    nodes = Nodes(nodesDB, output)
     coords = Coords(nodesDB)
 
     p = OSMParser(
@@ -190,11 +260,12 @@ if __name__ == '__main__':
         ways_tag_filter=tag_filter,
         nodes_callback=nodes.node,
         nodes_tag_filter=tag_filter)
-    print 'parsing ways and nodes'
+    print 'parsing ways and passing through nodes'
     p.parse(args['source'])
 
     ways.batch_write()
-    nodes.needed = ways.refs
+    coords.needed = ways.refs
+    print 'need ' + str(len(coords.needed)) + ' coords'
 
     p = OSMParser(coords_callback=coords.coord)
     print 'parsing coordinates'
@@ -204,7 +275,9 @@ if __name__ == '__main__':
     del p, ways, nodes
 
     print 'processing...'
-    leveldb_prep()
+    process(output)
+    file_prep(True)
+    output.write(']}')
 
     prW.disable()
     print round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 9.53674e-7, 2)
