@@ -49,8 +49,8 @@ def file_prep(db_only=False):
                 + ', name a different output file with --out, or add the --overwrite option'
                 sys.exit()
 
-    if os.path.isdir('nodes.ldb'):
-        shutil.rmtree('nodes.ldb')
+    if os.path.isdir('coords.ldb'):
+        shutil.rmtree('coords.ldb')
     if os.path.isdir('ways.ldb'):
         shutil.rmtree('ways.ldb')
 
@@ -83,8 +83,7 @@ class Ways():
 class Nodes():
     batch = []
 
-    def __init__(self, db, file):
-        self.db = db.write_batch()
+    def __init__(self, file):
         self.file = file
 
     def node(self, nodes):
@@ -125,7 +124,7 @@ class Coords():
             if id in self.needed:
                 lat = "%.5f" % lat
                 lon = "%.5f" % lon
-                self.db.put(str(id), json.dumps([[lat, lon]]))
+                self.db.put(str(id), str(lat) + ',' + str(lon))
                 self.count = self.count + 1
 
         if self.count > 3000000:
@@ -159,9 +158,8 @@ def process(output):
 
     queue = multiprocessing.Queue()
     pool = multiprocessing.Pool(None, include_queue, [queue], 100000)
-    go = pool.map_async(buildPOIs, waysDB.iterator(), callback=all_done)
+    go = pool.map_async(build_POIs, waysDB.iterator(), callback=all_done)
 
-    print 'started pool map'
     # let the processes get started and queues fill up a bit
     time.sleep(1)
 
@@ -176,16 +174,54 @@ def process(output):
 
 
 def include_queue(queue):
-    print 'include_queue go'
-    buildPOIs.queue = queue
+    build_POIs.queue = queue
 
 
 def all_done(necessary_arg):
     process.writeDone = True
 
 
-def buildPOIs((id, json)):
-    print json
+def build_POIs((id, string)):
+    queue = build_POIs.queue
+
+    # try/except because errors tend to disappear in multiprocessing
+    try:
+        refs, tags = json.loads(string)
+        polygon = build_polygon(refs)
+
+        if polygon.is_valid:
+            tags['POI_AREA'] = polygon.area
+            centroid = polygon.centroid
+
+            feature = {
+                'type': 'Feature',
+                'geometry': {
+                    'type': 'Point',
+                    'coordinates': [float(centroid.x), float(centroid.y)]},
+                'properties': tags
+            }
+
+            queue.put_nowait(json.dumps(feature) + '\n,\n')
+        else:
+            print 'false'
+
+    except Exception as e:
+        print e
+
+
+def build_polygon(refs):
+    coords = []
+
+    for ref in refs:
+        coord = coordsDB.get(str(ref))
+        if coord:
+            coord = map(float, coord.split(','))
+            coords.append(coord)
+
+    if coords[0] == coords[-1]:
+        return Polygon(coords)
+    else:
+        return False
 
 
 def write(file, queue):
@@ -245,15 +281,14 @@ if __name__ == '__main__':
 
     file_prep()
     waysDB = plyvel.DB('ways.ldb', create_if_missing=True, error_if_exists=True)
-    nodesDB = plyvel.DB('nodes.ldb', create_if_missing=True, error_if_exists=True)
-    # nodes and coords are in nodesDB, just with and without tags
+    coordsDB = plyvel.DB('coords.ldb', create_if_missing=True, error_if_exists=True)
 
     output = open(args['out'], 'a')
     output.write('{"type": "FeatureCollection", "features": [\n')
 
     ways = Ways(waysDB)
-    nodes = Nodes(nodesDB, output)
-    coords = Coords(nodesDB)
+    nodes = Nodes(output)
+    coords = Coords(coordsDB)
 
     p = OSMParser(
         ways_callback=ways.way,
@@ -264,14 +299,14 @@ if __name__ == '__main__':
     p.parse(args['source'])
 
     ways.batch_write()
+    nodes.batch_write()
     coords.needed = ways.refs
-    print 'need ' + str(len(coords.needed)) + ' coords'
 
     p = OSMParser(coords_callback=coords.coord)
     print 'parsing coordinates'
     p.parse(args['source'])
 
-    nodes.batch_write()
+    coords.batch_write()
     del p, ways, nodes
 
     print 'processing...'
