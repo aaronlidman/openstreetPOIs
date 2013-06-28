@@ -1,0 +1,1 @@
+openstreetPOIs extracts and builds points of interest from OpenStreetMap data. It extracts nodes with tags but also examines areas (buildings, lakes, parks, etc..) and uses the centroid as the point. The aim is to have a scalable way of parsing an osm file of any size quickly and extract useful points. What's useful? Checkout values.py

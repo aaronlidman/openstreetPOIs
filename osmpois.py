@@ -11,8 +11,9 @@ import argparse
 import plyvel
 import ujson as json
 from imposm.parser import OSMParser
-from shapely.geometry import Polygon, Point, mapping
+from shapely.geometry import Polygon
 import shapely.speedups
+from values import wantedKeys, lonelyKeys, dropTags
 
 
 def prep_args():
@@ -30,6 +31,10 @@ def prep_args():
         '--overwrite',
         help='Overwrite any conflicting files.',
         action='store_true')
+    parser.add_argument(
+        '--keep-lonely',
+        help='Keeps boring single tag features which might be removed otherwise. See lonelyKeys in values.py',
+        action='store_true')
 
     return parser
 
@@ -45,8 +50,8 @@ def file_prep(db_only=False):
                 os.remove(args['out'])
             else:
                 print 'overwrite conflict with file: ' + args['out']
-                print 'remove/rename ' + args['out']
-                + ', name a different output file with --out, or add the --overwrite option'
+                print ('remove/rename ' + args['out'] +
+                       ', name a different output file with --out, or add the --overwrite option')
                 sys.exit()
 
     if os.path.isdir('coords.ldb'):
@@ -149,7 +154,7 @@ def tag_filter(tags):
             # we could go nuts here, properly format things, combine common values, etc...
 
     # remove lonely key
-    if len(tags) == 1 and tags.keys()[0] in lonelyKeys:
+    if not args['keep_lonely'] and len(tags) == 1 and tags.keys()[0] in lonelyKeys:
         del tags[tags.keys()[0]]
 
 
@@ -190,7 +195,7 @@ def build_POIs((id, string)):
         polygon = build_polygon(refs)
 
         if polygon.is_valid:
-            tags['POI_AREA'] = polygon.area
+            tags['POI_AREA'] = polygon.area * 1000000
             centroid = polygon.centroid
 
             feature = {
@@ -242,42 +247,10 @@ def write(file, queue):
 
 
 if __name__ == '__main__':
+    print lonelyKeys
     prW = cProfile.Profile()
     prW.enable()
     shapely.speedups.enable()
-
-    # in order of prevalence, http://taginfo.openstreetmap.org/keys
-    # I went through the first 25 pages (500 keys)
-    wantedKeys = frozenset((
-        'building', 'name', 'addr:housenumber', 'addr:street', 'addr:city',
-        'addr:postcode', 'addr:state', 'natural', 'landuse', 'amenity', 'railway',
-        'leisure', 'shop', 'man_made', 'sport', 'religion', 'wheelchair', 'parking',
-        'alt_name', 'public_transport', 'website', 'wikipedia', 'water', 'historic',
-        'denomination', 'url', 'phone', 'cuisine', 'aeroway', 'opening_hours',
-        'bus', 'emergency', 'information', 'site', 'bench', 'wetland', 'toll',
-        'atm', 'golf', 'brand', 'aerialway'
-    ))
-
-
-    # keys from wantedKeys that are useless by themselves, they need some context
-    # basically if that was the only tag, there would no useful way to render it
-    lonelyKeys = frozenset((
-        'building', 'name', 'addr:street', 'addr:city', 'addr:postcode', 'addr:state',
-        'natural', 'landuse', 'wheelchair', 'alt_name', 'website', 'water', 'url',
-        'phone', 'opening_hours', 'wetland', 'brand'
-    ))
-
-    # tag values that aren't really worth bothering over, mostly because they're very common
-    # maybe I should be making a whilelist rather than this blacklist?
-        # only include tags with values x, y, z with a few exceptions like 'name' key
-    dropTags = {
-        '*': {'no'},
-        'aeroway': {'taxiway'},
-        'railway': {'rail', 'abandoned', 'disused', 'switch', 'level_crossing',
-        'buffer_stop'},
-        'man_made': {'pipeline'},
-        'amenity': {'parking'}
-    }
 
     file_prep()
     waysDB = plyvel.DB('ways.ldb', create_if_missing=True, error_if_exists=True)
