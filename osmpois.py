@@ -32,8 +32,8 @@ def prep_args():
         help='Overwrite any conflicting files.',
         action='store_true')
     parser.add_argument(
-        '--keep-lonely',
-        help='Keeps boring single tag features which might be removed otherwise. See lonelyKeys in values.py',
+        '--remove-lonely',
+        help='Remove boring single tag features which might be kept otherwise. See lonelyKeys in values.py',
         action='store_true')
 
     return parser
@@ -69,8 +69,8 @@ class Ways():
 
     def way(self, ways):
         for id, tags, refs in ways:
-            # circular ways only
-            if len(tags) and refs[0] == refs[-1]:
+            if len(tags) and len(refs) > 1 and refs[0] == refs[-1]:
+                # circular ways only
                 id = str(id)
                 tags['OSM_ID'] = 'way/' + id
                 self.db.put(id, json.dumps([refs, tags]))
@@ -127,8 +127,6 @@ class Coords():
     def coord(self, coords):
         for id, lat, lon in coords:
             if id in self.needed:
-                lat = "%.5f" % lat
-                lon = "%.5f" % lon
                 self.db.put(str(id), str(lat) + ',' + str(lon))
                 self.count = self.count + 1
 
@@ -153,32 +151,31 @@ def tag_filter(tags):
                 del tags[key]
 
     # remove lonely key
-    if not args['keep_lonely'] and len(tags) == 1 and tags.keys()[0] in lonelyKeys:
+    if args['remove_lonely'] and len(tags) == 1 and tags.keys()[0] in lonelyKeys:
         del tags[tags.keys()[0]]
+
+
+def include_queue(queue):
+    build_POIs.queue = queue
 
 
 def process(output):
     process.writeDone = False
 
     queue = multiprocessing.Queue()
-    pool = multiprocessing.Pool(None, include_queue, [queue], 100000)
+    pool = multiprocessing.Pool(None, include_queue, [queue], 1000000)
     go = pool.map_async(build_POIs, waysDB.iterator(), callback=all_done)
 
-    # let the processes get started and queues fill up a bit
+    # let the processes start and queues fill up a bit
     time.sleep(1)
 
     while True:
-        print 'round and'
         if write(output, queue):
             break
 
     go.wait()
     pool.close()
     pool.join()
-
-
-def include_queue(queue):
-    build_POIs.queue = queue
 
 
 def all_done(necessary_arg):
@@ -192,72 +189,73 @@ def build_POIs((id, string)):
     refs, tags = json.loads(string)
     polygon = build_polygon(refs)
 
-    try:
-        if polygon:
-            tags['POI_AREA'] = polygon.area * 1000000
+    if polygon and polygon.is_valid:
+        tags['POI_AREA'] = polygon.area * 1000000
 
-            if tags['POI_AREA'] > 0:
-                centroid = polygon.centroid
+        if tags['POI_AREA'] > 0.0:
+            centroid = polygon.centroid
 
-                feature = {
-                    'type': 'Feature',
-                    'geometry': {
-                        'type': 'Point',
-                        'coordinates': [float(centroid.x), float(centroid.y)]},
-                    'properties': tags
-                }
+            feature = {
+                'type': 'Feature',
+                'geometry': {
+                    'type': 'Point',
+                    'coordinates': [
+                        float("%.5f" % centroid.x),
+                        float("%.5f" % centroid.y)]},
+                'properties': tags
+            }
 
-                queue.put_nowait(json.dumps(feature) + '\n,\n')
-            else:
-                print 'area catch: ' + str(id)
-        else:
-            print 'False: ' + str(id)
+            queue.put(json.dumps(feature) + '\n,\n')
 
-    except Exception as e:
-        print id
-        # print e
 
 
 def build_polygon(refs):
-    try:
-        coords = []
+    coords = []
 
-        for ref in refs:
-            coord = coordsDB.get(str(ref))
-            if coord:
-                coord = map(float, coord.split(','))
-                coords.append(coord)
-            else:
-                # for some reason coordinates are missing
-                # this is usually because an extract cuts coordinates out
-                return False
-
-        if len(coords) > 3:
-            # 4 point minimum for polygon
-            # avoids common problems
-            return Polygon(coords)
+    for ref in refs:
+        coord = coordsDB.get(str(ref))
+        if coord:
+            coord = map(float, coord.split(','))
+            coords.append(coord)
         else:
+            # for some reason coordinates are missing
+            # this is usually because an extract cuts coordinates out
             return False
-    except:
-        print 'ugg'
+
+    if len(coords) > 2:
+        # 3 point minimum for polygon
+        # avoids common osm problems
+        polygon = Polygon(coords)
+
+        if polygon.is_valid:
+            return polygon
+        else:
+            # 0.0 buffer cleans invalid polygons
+            # they're invalid for many reasons, people prone problems
+            return polygon.buffer(0.0)
+    else:
         return False
 
 
 def write(file, queue):
     # no .qsize on OS X means we use sleep(), lame
-    toFile = ''
+    toFile = []
 
-    while True:
-        try:
-            toFile += queue.get_nowait()
-        except:
-            file.write(toFile)
-            break
+    while not queue.empty():
+        toFile.append(queue.get_nowait())
+
+    file.write(''.join(toFile))
+    # improvement: batch this
 
     if process.writeDone:
         return True
     else:
-        time.sleep(5)
+        time.sleep(0.05)
+        # might need to be adjusted
+        # for some reason the queue is actually quite small
+        # documentation says 'infinite', usage says ~60000 chars
+            # 300 strings about 200 char long
+            # am I just using it wrong?
 
 
 if __name__ == '__main__':
@@ -300,7 +298,7 @@ if __name__ == '__main__':
     file_prep(True)
     output.write(']}')
 
-    print 'saved as: ' + args['out']
+    print 'saved as: ' + str(args['out'])
     prW.disable()
     print round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 9.53674e-7, 2)
 
