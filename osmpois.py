@@ -13,7 +13,7 @@ import ujson as json
 from imposm.parser import OSMParser
 from shapely.geometry import Polygon
 import shapely.speedups
-from values import wantedKeys, lonelyKeys, dropTags
+from settings import wantedTags, lonelyKeys
 
 
 def prep_args():
@@ -143,15 +143,14 @@ class Coords():
 
 def tag_filter(tags):
     for key in tags.keys():
-        if key not in wantedKeys:
+        if key not in wantedTags:
             del tags[key]
         else:
-            if key in dropTags and tags[key] in dropTags[key]:
+            if wantedTags[key] == '*' or tags[key] in wantedTags[key]:
+                a = 1
+                # a = 1 is a placeholder, more to do here, combine keys, normalize values, etc...
+            else:
                 del tags[key]
-            elif '*' in dropTags and tags[key] in dropTags['*']:
-                del tags[key]
-
-            # we could go nuts here, properly format things, combine common values, etc...
 
     # remove lonely key
     if not args['keep_lonely'] and len(tags) == 1 and tags.keys()[0] in lonelyKeys:
@@ -190,42 +189,57 @@ def build_POIs((id, string)):
     queue = build_POIs.queue
 
     # try/except because errors tend to disappear in multiprocessing
+    refs, tags = json.loads(string)
+    polygon = build_polygon(refs)
+
     try:
-        refs, tags = json.loads(string)
-        polygon = build_polygon(refs)
-
-        if polygon.is_valid:
+        if polygon:
             tags['POI_AREA'] = polygon.area * 1000000
-            centroid = polygon.centroid
 
-            feature = {
-                'type': 'Feature',
-                'geometry': {
-                    'type': 'Point',
-                    'coordinates': [float(centroid.x), float(centroid.y)]},
-                'properties': tags
-            }
+            if tags['POI_AREA'] > 0:
+                centroid = polygon.centroid
 
-            queue.put_nowait(json.dumps(feature) + '\n,\n')
+                feature = {
+                    'type': 'Feature',
+                    'geometry': {
+                        'type': 'Point',
+                        'coordinates': [float(centroid.x), float(centroid.y)]},
+                    'properties': tags
+                }
+
+                queue.put_nowait(json.dumps(feature) + '\n,\n')
+            else:
+                print 'area catch: ' + str(id)
         else:
-            print 'false'
+            print 'False: ' + str(id)
 
     except Exception as e:
-        print e
+        print id
+        # print e
 
 
 def build_polygon(refs):
-    coords = []
+    try:
+        coords = []
 
-    for ref in refs:
-        coord = coordsDB.get(str(ref))
-        if coord:
-            coord = map(float, coord.split(','))
-            coords.append(coord)
+        for ref in refs:
+            coord = coordsDB.get(str(ref))
+            if coord:
+                coord = map(float, coord.split(','))
+                coords.append(coord)
+            else:
+                # for some reason coordinates are missing
+                # this is usually because an extract cuts coordinates out
+                return False
 
-    if coords[0] == coords[-1]:
-        return Polygon(coords)
-    else:
+        if len(coords) > 3:
+            # 4 point minimum for polygon
+            # avoids common problems
+            return Polygon(coords)
+        else:
+            return False
+    except:
+        print 'ugg'
         return False
 
 
@@ -247,7 +261,6 @@ def write(file, queue):
 
 
 if __name__ == '__main__':
-    print lonelyKeys
     prW = cProfile.Profile()
     prW.enable()
     shapely.speedups.enable()
@@ -287,6 +300,7 @@ if __name__ == '__main__':
     file_prep(True)
     output.write(']}')
 
+    print 'saved as: ' + args['out']
     prW.disable()
     print round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 9.53674e-7, 2)
 
