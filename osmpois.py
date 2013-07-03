@@ -92,6 +92,7 @@ class Ways():
 
 class Nodes():
     batch = []
+    first = True
 
     def __init__(self, file):
         self.file = file
@@ -112,13 +113,18 @@ class Nodes():
                     'properties': tags
                 }
 
-                self.batch.append(json.dumps(feature) + '\n,\n')
+                self.batch.append(json.dumps(feature))
 
         if len(self.batch) > 10000:
             self.batch_write()
 
     def batch_write(self):
-        self.file.write(''.join(self.batch))
+        if self.first:
+            self.file.write(',\n'.join(self.batch))
+            self.first = False
+        else:
+            self.file.write(',\n' + ',\n'.join(self.batch))
+
         self.batch = []
 
 
@@ -210,7 +216,7 @@ def build_POIs((id, string)):
                 'properties': tags
             }
 
-            queue.put(json.dumps(feature) + '\n,\n')
+            queue.put(json.dumps(feature))
 
 
 
@@ -249,7 +255,7 @@ def write(file, queue):
     while not queue.empty():
         toFile.append(queue.get_nowait())
 
-    file.write(''.join(toFile))
+    file.write(',\n' + ',\n'.join(toFile))
     # improvement: batch this
 
     if process.writeDone:
