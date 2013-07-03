@@ -33,14 +33,19 @@ def prep_args():
         action='store_true')
     parser.add_argument(
         '--require-name',
-        help='Only output items that have the \'name\' tag defined.',
+        help='Only output items that have a defined \'name\' tag.',
+        action='store_true')
+    parser.add_argument(
+        '--profile',
         action='store_true')
 
     return parser
 
 args = vars(prep_args().parse_args())
 args['out'] = args['out'] + '.geojson'
-print args
+
+if args['profile']:
+    print args
 
 
 def file_prep(db_only=False):
@@ -151,7 +156,7 @@ def tag_filter(tags):
             else:
                 if wantedTags[key] == '*' or tags[key] in wantedTags[key]:
                     a = 1
-                    # a = 1 is a placeholder, more to do here, combine keys, normalize values, etc...
+                    # placeholder, more to do here, combine keys, normalize values, etc...
                 else:
                     del tags[key]
 
@@ -167,8 +172,8 @@ def process(output):
     pool = multiprocessing.Pool(None, include_queue, [queue], 1000000)
     go = pool.map_async(build_POIs, waysDB.iterator(), callback=all_done)
 
-    # let the processes start and queues fill up a bit
     time.sleep(1)
+    # let the processes start and queues fill up a bit
 
     while True:
         if write(output, queue):
@@ -259,8 +264,10 @@ def write(file, queue):
 
 
 if __name__ == '__main__':
-    prW = cProfile.Profile()
-    prW.enable()
+    if args['profile']:
+        prW = cProfile.Profile()
+        prW.enable()
+
     shapely.speedups.enable()
 
     file_prep()
@@ -299,9 +306,11 @@ if __name__ == '__main__':
     output.write(']}')
 
     print 'saved as: ' + str(args['out'])
-    prW.disable()
-    print round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 9.53674e-7, 2)
 
-    ps = pstats.Stats(prW)
-    ps.sort_stats('time')
-    a = ps.print_stats(30)
+    if args['profile']:
+        prW.disable()
+        print round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 9.53674e-7, 2)
+
+        ps = pstats.Stats(prW)
+        ps.sort_stats('time')
+        a = ps.print_stats(30)
