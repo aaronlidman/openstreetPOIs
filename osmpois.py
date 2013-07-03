@@ -33,7 +33,11 @@ def prep_args():
         action='store_true')
     parser.add_argument(
         '--remove-lonely',
-        help='Remove boring single tag features which might be kept otherwise. See lonelyKeys in values.py',
+        help='Remove boring single tag features which might be kept otherwise. See lonelyKeys in settings.py',
+        action='store_true')
+    parser.add_argument(
+        '--require-name',
+        help='Only output items that have the \'name\' tag defined.',
         action='store_true')
 
     return parser
@@ -140,19 +144,24 @@ class Coords():
 
 
 def tag_filter(tags):
-    for key in tags.keys():
-        if key not in wantedTags:
+    if args['require_name'] and 'name' not in tags:
+        for key in tags.keys():
             del tags[key]
-        else:
-            if wantedTags[key] == '*' or tags[key] in wantedTags[key]:
-                a = 1
-                # a = 1 is a placeholder, more to do here, combine keys, normalize values, etc...
-            else:
+            # "functions should modify the dictionary in-place"
+    else:
+        for key in tags.keys():
+            if key not in wantedTags:
                 del tags[key]
+            else:
+                if wantedTags[key] == '*' or tags[key] in wantedTags[key]:
+                    a = 1
+                    # a = 1 is a placeholder, more to do here, combine keys, normalize values, etc...
+                else:
+                    del tags[key]
 
-    # remove lonely key
-    if args['remove_lonely'] and len(tags) == 1 and tags.keys()[0] in lonelyKeys:
-        del tags[tags.keys()[0]]
+        # remove lonely key
+        if args['remove_lonely'] and len(tags) == 1 and tags.keys()[0] in lonelyKeys:
+            del tags[tags.keys()[0]]
 
 
 def include_queue(queue):
@@ -185,7 +194,6 @@ def all_done(necessary_arg):
 def build_POIs((id, string)):
     queue = build_POIs.queue
 
-    # try/except because errors tend to disappear in multiprocessing
     refs, tags = json.loads(string)
     polygon = build_polygon(refs)
 
