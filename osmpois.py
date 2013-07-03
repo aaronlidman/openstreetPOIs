@@ -13,7 +13,7 @@ import ujson as json
 from imposm.parser import OSMParser
 from shapely.geometry import Polygon
 import shapely.speedups
-from settings import wantedTags, lonelyKeys
+from settings import wantedTags
 
 
 def prep_args():
@@ -30,10 +30,6 @@ def prep_args():
     parser.add_argument(
         '--overwrite',
         help='Overwrite any conflicting files.',
-        action='store_true')
-    parser.add_argument(
-        '--remove-lonely',
-        help='Remove boring single tag features which might be kept otherwise. See lonelyKeys in settings.py',
         action='store_true')
     parser.add_argument(
         '--require-name',
@@ -158,10 +154,6 @@ def tag_filter(tags):
                     # a = 1 is a placeholder, more to do here, combine keys, normalize values, etc...
                 else:
                     del tags[key]
-
-        # remove lonely key
-        if args['remove_lonely'] and len(tags) == 1 and tags.keys()[0] in lonelyKeys:
-            del tags[tags.keys()[0]]
 
 
 def include_queue(queue):

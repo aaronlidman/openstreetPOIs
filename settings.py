@@ -79,12 +79,3 @@ wantedTags = {
     'aerialway': [
         'station', 'chair_lift']
 }
-
-# keys from wantedTags that are useless by themselves, they need some context
-# basically if that was the only tag, there would no useful way to render it
-# ex. a lake, natural=water without a name or addr or anything, useless as a POI
-lonelyKeys = frozenset((
-    'addr:street', 'addr:city', 'addr:postcode', 'addr:state',
-    'natural', 'landuse', 'wheelchair', 'alt_name', 'website', 'water', 'url',
-    'phone', 'opening_hours', 'wetland', 'brand'
-))

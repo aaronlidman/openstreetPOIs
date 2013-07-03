@@ -6,5 +6,4 @@ settings.py contains a list of all the features to be extracted. It's made up of
 - `-h, --help` - show the help message and exit
 - `-o OUT, --out OUT` - Destination filename to create (no extension, .extension gets added on) (default: output)
 - `--overwrite` - Overwrite any conflicting files.
-- `--remove-lonely` - Remove boring single tag features which might be kept otherwise. See lonelyKeys in values.py
 - `--require-name` - Only output items that have the 'name' tag defined.
