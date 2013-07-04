@@ -255,8 +255,9 @@ def write(file, queue):
     while not queue.empty():
         toFile.append(queue.get_nowait())
 
-    file.write(',\n' + ',\n'.join(toFile))
-    # improvement: batch this
+    if len(toFile):
+        file.write(',\n' + ',\n'.join(toFile))
+        # improvement: batch this
 
     if process.writeDone:
         return True
@@ -304,7 +305,7 @@ if __name__ == '__main__':
     p.parse(args['source'])
 
     coords.batch_write()
-    del p, ways, nodes
+    del p, ways, nodes, coords.needed
 
     print 'processing...'
     process(output)

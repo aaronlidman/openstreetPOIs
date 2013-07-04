@@ -1,0 +1,4 @@
+Shapely==1.2.17
+imposm.parser==1.0.4
+plyvel==0.4
+ujson==1.33
