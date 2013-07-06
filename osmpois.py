@@ -63,25 +63,24 @@ def file_prep(db_only=False):
         shutil.rmtree('coords.ldb')
     if os.path.isdir('ways.ldb'):
         shutil.rmtree('ways.ldb')
-    if os.path.isdir('refs.ldb'):
-        shutil.rmtree('refs.ldb')
 
 
 class Ways():
     count = 0
+    refs = bytearray()
+    tempRefs = set()
 
-    def __init__(self, db, refsDB):
+    def __init__(self, db):
         self.db = db.write_batch()
-        self.refsDB = refsDB.write_batch()
 
     def way(self, ways):
         for id, tags, refs in ways:
             if len(tags) and len(refs) > 1 and refs[0] == refs[-1]:
-                # only circular ways
+                # circular ways only
                 id = str(id)
                 tags['OSM_ID'] = 'way/' + id
                 self.db.put(id, json.dumps([refs, tags]))
-                self.put_refs(refs)
+                self.tempRefs.update(refs)
                 self.count = self.count + 1
 
         if self.count > 200000:
@@ -89,12 +88,22 @@ class Ways():
 
     def batch_write(self):
         self.db.write()
-        self.refsDB.write()
         self.count = 0
+        self.update_refs(self.tempRefs)
 
-    def put_refs(self, refs):
+    def update_refs(self, refs):
+        # improvement: keep track of the min and imply the index based off of it
+        old = len(self.refs)
+        new = max(refs) + 1
+
+        if new > old:
+            temp = bytearray(new - old)
+            self.refs.extend(temp)
+
         for ref in refs:
-            self.refsDB.put(str(id), '1')
+            self.refs[ref] = 1
+
+        self.tempRefs = set()
 
 
 class Nodes():
@@ -137,19 +146,16 @@ class Nodes():
 
 class Coords():
     count = 0
+    needed = set()
 
-    def __init__(self, db, refsDB):
+    def __init__(self, db):
         self.db = db.write_batch()
-        self.refsDB = refsDB
 
     def coord(self, coords):
         for id, lat, lon in coords:
-            try:
-                if self.refsDB.get(str(id)):
-                    self.db.put(str(id), str(lat) + ',' + str(lon))
-                    self.count = self.count + 1
-            except Exception, e:
-                print e + ': ' + str(id)
+            if self.needed[id]:
+                self.db.put(str(id), str(lat) + ',' + str(lon))
+                self.count = self.count + 1
 
         if self.count > 3000000:
             # ~30MB per million in mem
@@ -175,6 +181,10 @@ def tag_filter(tags):
                     # placeholder, more to do here, combine keys, normalize values, etc...
                 else:
                     del tags[key]
+
+
+def round_down(num, divisor):
+    return num - (num % divisor)
 
 
 def include_queue(queue):
@@ -228,7 +238,7 @@ def build_POIs((id, string)):
             }
 
             queue.put(json.dumps(feature))
-            return id
+
 
 
 def build_polygon(refs):
@@ -270,17 +280,8 @@ def write(file, queue):
         file.write(',\n' + ',\n'.join(toFile))
         # improvement: batch this
 
-    # another conditional here
-        # if process.writeDone
-        # but the queue still has items
-        # immediately return False so the loop can keep going and empty out the remaining queue
-            # source of all problems?
-            # seems like a disk speed problem?
     if process.writeDone:
-        if queue.empty():
-            return True
-        # else it returns and runs again immediately
-        # this is to clear out any last items in the queue
+        return True
     else:
         time.sleep(0.05)
         # might need to be adjusted
@@ -300,15 +301,13 @@ if __name__ == '__main__':
     file_prep()
     waysDB = plyvel.DB('ways.ldb', create_if_missing=True, error_if_exists=True)
     coordsDB = plyvel.DB('coords.ldb', create_if_missing=True, error_if_exists=True)
-    refsDB = plyvel.DB('refs.ldb', create_if_missing=True, error_if_exists=True, bloom_filter_bits=5)
-        # mess w/ bits
 
     output = open(args['out'], 'a')
     output.write('{"type": "FeatureCollection", "features": [\n')
 
-    ways = Ways(waysDB, refsDB)
+    ways = Ways(waysDB)
     nodes = Nodes(output)
-    coords = Coords(coordsDB, refsDB)
+    coords = Coords(coordsDB)
 
     p = OSMParser(
         ways_callback=ways.way,
@@ -320,20 +319,19 @@ if __name__ == '__main__':
 
     ways.batch_write()
     nodes.batch_write()
+    coords.needed = ways.refs
 
     p = OSMParser(coords_callback=coords.coord)
     print 'parsing coordinates'
     p.parse(args['source'])
 
     coords.batch_write()
-    del p, ways, nodes, coords
-    refsDB.close()
-    plyvel.destroy_db('refs.ldb')
+    del p, ways, nodes, coords.needed
 
     print 'processing...'
     process(output)
     file_prep(True)
-    output.write('\n]}')
+    output.write(']}')
 
     print 'saved as: ' + str(args['out'])
 
