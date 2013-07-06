@@ -22,7 +22,6 @@ settings.py contains a list of all the features to be extracted. It's made up of
 - [Shapely](http://toblerity.github.io/shapely/)
 - [UltraJSON](https://github.com/esnme/ultrajson)
 - [Plyvel](https://github.com/wbolster/plyvel)
-- [bitarray](https://pypi.python.org/pypi/bitarray/)
 
 ### Usage
 Get your desired OSM data ([good starting point](http://wiki.openstreetmap.org/wiki/Planet.osm#Downloading)) in .pbf, .osm.bz2 or just .osm. With all the dependencies installed and python setup, run: `python osmpois.py YOUR_OSM_FILE.EXT` and add options (below).

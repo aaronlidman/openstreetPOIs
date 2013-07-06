@@ -13,7 +13,6 @@ import ujson as json
 from imposm.parser import OSMParser
 from shapely.geometry import Polygon
 import shapely.speedups
-from bitarray import bitarray
 from settings import wantedTags
 
 
@@ -64,15 +63,16 @@ def file_prep(db_only=False):
         shutil.rmtree('coords.ldb')
     if os.path.isdir('ways.ldb'):
         shutil.rmtree('ways.ldb')
+    if os.path.isdir('refs.ldb'):
+        shutil.rmtree('refs.ldb')
 
 
 class Ways():
     count = 0
-    refs = set()
-    refsArray = bitarray()
 
-    def __init__(self, db):
+    def __init__(self, db, refsDB):
         self.db = db.write_batch()
+        self.refsDB = refsDB.write_batch()
 
     def way(self, ways):
         for id, tags, refs in ways:
@@ -80,32 +80,21 @@ class Ways():
                 # only circular ways
                 id = str(id)
                 tags['OSM_ID'] = 'way/' + id
-                print type(self.db.put)
                 self.db.put(id, json.dumps([refs, tags]))
-                self.refs.update(refs)
+                self.put_refs(refs)
                 self.count = self.count + 1
 
         if self.count > 200000:
             self.batch_write()
 
     def batch_write(self):
-        print 'way batch write'
         self.db.write()
-        self.update_array(self.refs)
+        self.refsDB.write()
         self.count = 0
 
-    def update_array(self, refs):
-        old = len(self.refsArray)
-        new = max(refs) + 1
-
-        if new > old:
-            temp = bitarray(xrange(old, new))
-            temp.setall(0)
-            self.refsArray.extend(temp)
-            del temp
-
-            for ref in refs:
-                self.refsArray[ref] = True
+    def put_refs(self, refs):
+        for ref in refs:
+            self.refsDB.put(str(id), '1')
 
 
 class Nodes():
@@ -149,13 +138,14 @@ class Nodes():
 class Coords():
     count = 0
 
-    def __init__(self, db):
+    def __init__(self, db, refsDB):
         self.db = db.write_batch()
+        self.refsDB = refsDB
 
     def coord(self, coords):
         for id, lat, lon in coords:
             try:
-                if self.needed[id]:
+                if self.refsDB.get(str(id)):
                     self.db.put(str(id), str(lat) + ',' + str(lon))
                     self.count = self.count + 1
             except Exception, e:
@@ -310,13 +300,15 @@ if __name__ == '__main__':
     file_prep()
     waysDB = plyvel.DB('ways.ldb', create_if_missing=True, error_if_exists=True)
     coordsDB = plyvel.DB('coords.ldb', create_if_missing=True, error_if_exists=True)
+    refsDB = plyvel.DB('refs.ldb', create_if_missing=True, error_if_exists=True, bloom_filter_bits=5)
+        # mess w/ bits
 
     output = open(args['out'], 'a')
     output.write('{"type": "FeatureCollection", "features": [\n')
 
-    ways = Ways(waysDB)
+    ways = Ways(waysDB, refsDB)
     nodes = Nodes(output)
-    coords = Coords(coordsDB)
+    coords = Coords(coordsDB, refsDB)
 
     p = OSMParser(
         ways_callback=ways.way,
@@ -328,7 +320,6 @@ if __name__ == '__main__':
 
     ways.batch_write()
     nodes.batch_write()
-    coords.needed = ways.refsArray
 
     p = OSMParser(coords_callback=coords.coord)
     print 'parsing coordinates'
@@ -336,6 +327,8 @@ if __name__ == '__main__':
 
     coords.batch_write()
     del p, ways, nodes, coords
+    refsDB.close()
+    plyvel.destroy_db('refs.ldb')
 
     print 'processing...'
     process(output)
