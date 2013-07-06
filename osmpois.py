@@ -13,6 +13,7 @@ import ujson as json
 from imposm.parser import OSMParser
 from shapely.geometry import Polygon
 import shapely.speedups
+from bitarray import bitarray
 from settings import wantedTags
 
 
@@ -68,6 +69,7 @@ def file_prep(db_only=False):
 class Ways():
     count = 0
     refs = set()
+    refsArray = bitarray()
 
     def __init__(self, db):
         self.db = db.write_batch()
@@ -75,9 +77,10 @@ class Ways():
     def way(self, ways):
         for id, tags, refs in ways:
             if len(tags) and len(refs) > 1 and refs[0] == refs[-1]:
-                # circular ways only
+                # only circular ways
                 id = str(id)
                 tags['OSM_ID'] = 'way/' + id
+                print type(self.db.put)
                 self.db.put(id, json.dumps([refs, tags]))
                 self.refs.update(refs)
                 self.count = self.count + 1
@@ -86,8 +89,23 @@ class Ways():
             self.batch_write()
 
     def batch_write(self):
+        print 'way batch write'
         self.db.write()
+        self.update_array(self.refs)
         self.count = 0
+
+    def update_array(self, refs):
+        old = len(self.refsArray)
+        new = max(refs) + 1
+
+        if new > old:
+            temp = bitarray(xrange(old, new))
+            temp.setall(0)
+            self.refsArray.extend(temp)
+            del temp
+
+            for ref in refs:
+                self.refsArray[ref] = True
 
 
 class Nodes():
@@ -130,16 +148,18 @@ class Nodes():
 
 class Coords():
     count = 0
-    needed = set()
 
     def __init__(self, db):
         self.db = db.write_batch()
 
     def coord(self, coords):
         for id, lat, lon in coords:
-            if id in self.needed:
-                self.db.put(str(id), str(lat) + ',' + str(lon))
-                self.count = self.count + 1
+            try:
+                if self.needed[id]:
+                    self.db.put(str(id), str(lat) + ',' + str(lon))
+                    self.count = self.count + 1
+            except Exception, e:
+                print e + ': ' + str(id)
 
         if self.count > 3000000:
             # ~30MB per million in mem
@@ -191,6 +211,7 @@ def process(output):
 
 
 def all_done(necessary_arg):
+    print len(necessary_arg)
     process.writeDone = True
 
 
@@ -217,7 +238,7 @@ def build_POIs((id, string)):
             }
 
             queue.put(json.dumps(feature))
-
+            return id
 
 
 def build_polygon(refs):
@@ -259,8 +280,17 @@ def write(file, queue):
         file.write(',\n' + ',\n'.join(toFile))
         # improvement: batch this
 
+    # another conditional here
+        # if process.writeDone
+        # but the queue still has items
+        # immediately return False so the loop can keep going and empty out the remaining queue
+            # source of all problems?
+            # seems like a disk speed problem?
     if process.writeDone:
-        return True
+        if queue.empty():
+            return True
+        # else it returns and runs again immediately
+        # this is to clear out any last items in the queue
     else:
         time.sleep(0.05)
         # might need to be adjusted
@@ -298,19 +328,19 @@ if __name__ == '__main__':
 
     ways.batch_write()
     nodes.batch_write()
-    coords.needed = ways.refs
+    coords.needed = ways.refsArray
 
     p = OSMParser(coords_callback=coords.coord)
     print 'parsing coordinates'
     p.parse(args['source'])
 
     coords.batch_write()
-    del p, ways, nodes, coords.needed
+    del p, ways, nodes, coords
 
     print 'processing...'
     process(output)
     file_prep(True)
-    output.write(']}')
+    output.write('\n]}')
 
     print 'saved as: ' + str(args['out'])
 
