@@ -38,6 +38,13 @@ def prep_args():
     parser.add_argument(
         '--profile',
         action='store_true')
+    parser.add_argument(
+        '--group-size',
+        help='How large of a group to use for coordinate lookup. (default: 20) '
+        'A balance between RAM and disk usage to use for coordinate lookups. '
+        'lower = more RAM, higher = more disk',
+        type=int,
+        default=20)
 
     return parser
 
@@ -67,8 +74,7 @@ def file_prep(db_only=False):
 
 class Ways():
     count = 0
-    refs = bytearray()
-    tempRefs = set()
+    groups = set()
 
     def __init__(self, db):
         self.db = db.write_batch()
@@ -80,7 +86,7 @@ class Ways():
                 id = str(id)
                 tags['OSM_ID'] = 'way/' + id
                 self.db.put(id, json.dumps([refs, tags]))
-                self.tempRefs.update(refs)
+                self.put_refs(refs)
                 self.count = self.count + 1
 
         if self.count > 200000:
@@ -89,21 +95,10 @@ class Ways():
     def batch_write(self):
         self.db.write()
         self.count = 0
-        self.update_refs(self.tempRefs)
 
-    def update_refs(self, refs):
-        # improvement: keep track of the min and imply the index based off of it
-        old = len(self.refs)
-        new = max(refs) + 1
-
-        if new > old:
-            temp = bytearray(new - old)
-            self.refs.extend(temp)
-
+    def put_refs(self, refs):
         for ref in refs:
-            self.refs[ref] = 1
-
-        self.tempRefs = set()
+            self.groups.add(round_down(ref, args['group_size']))
 
 
 class Nodes():
@@ -146,16 +141,19 @@ class Nodes():
 
 class Coords():
     count = 0
-    needed = set()
 
-    def __init__(self, db):
+    def __init__(self, db, needed):
         self.db = db.write_batch()
+        self.needed = needed
 
     def coord(self, coords):
         for id, lat, lon in coords:
-            if self.needed[id]:
-                self.db.put(str(id), str(lat) + ',' + str(lon))
-                self.count = self.count + 1
+            try:
+                if round_down(id, args['group_size']) in self.needed:
+                    self.db.put(str(id), str(lat) + ',' + str(lon))
+                    self.count = self.count + 1
+            except Exception, e:
+                print e + ': ' + str(id)
 
         if self.count > 3000000:
             # ~30MB per million in mem
@@ -238,7 +236,7 @@ def build_POIs((id, string)):
             }
 
             queue.put(json.dumps(feature))
-
+            return id
 
 
 def build_polygon(refs):
@@ -281,14 +279,12 @@ def write(file, queue):
         # improvement: batch this
 
     if process.writeDone:
-        return True
+        if queue.empty():
+            return True
+        # else it returns and runs again immediately
+        # this is to clear out any last items in the queue
     else:
         time.sleep(0.05)
-        # might need to be adjusted
-        # for some reason the queue is actually quite small
-        # documentation says 'infinite', usage says ~60000 chars
-            # 300 strings about 200 char long
-            # am I just using it wrong?
 
 
 if __name__ == '__main__':
@@ -307,7 +303,7 @@ if __name__ == '__main__':
 
     ways = Ways(waysDB)
     nodes = Nodes(output)
-    coords = Coords(coordsDB)
+    coords = Coords(coordsDB, ways.groups)
 
     p = OSMParser(
         ways_callback=ways.way,
@@ -319,19 +315,18 @@ if __name__ == '__main__':
 
     ways.batch_write()
     nodes.batch_write()
-    coords.needed = ways.refs
 
     p = OSMParser(coords_callback=coords.coord)
     print 'parsing coordinates'
     p.parse(args['source'])
 
     coords.batch_write()
-    del p, ways, nodes, coords.needed
+    del p, ways, nodes, coords
 
     print 'processing...'
     process(output)
     file_prep(True)
-    output.write(']}')
+    output.write('\n]}')
 
     print 'saved as: ' + str(args['out'])
 

@@ -10,7 +10,7 @@ settings.py contains a list of all the features to be extracted. It's made up of
 		- `brew update`
 		- `brew install python geos leveldb protobuf`
 	- Ubuntu
-		- [(12.10 minimum required, plyvel has a problem with 12.04)](https://github.com/wbolster/plyvel/issues/7)
+		- 12.10 minimum required, plyvel has a problem with 12.04. [details](https://github.com/wbolster/plyvel/commit/16880a9d2143d53662d0d57ca2b3c7dcc6d6334f)
 		- `apt-get update`
 		- `apt-get -y install python-dev python-pip build-essential libprotobuf-dev protobuf-compiler libleveldb-dev libgeos-dev`
 4. Optional. Setup your python virtualenv.
@@ -31,5 +31,6 @@ Get your desired OSM data ([good starting point](http://wiki.openstreetmap.org/w
 - `-o OUT, --out OUT` - Destination filename to create (no extension, .extension gets added on) (default: output)
 - `--overwrite` - Overwrite any conflicting files.
 - `--require-name` - Only output items that have the 'name' tag defined.
+- `--group-size` - How large of a group to use for coordinate lookup. (default: 20) A balance between RAM and disk usage to use for coordinate lookups. lower = more RAM, higher = more disk.
 
 ### BSD License
