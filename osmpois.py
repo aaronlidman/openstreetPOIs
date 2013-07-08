@@ -73,11 +73,10 @@ def file_prep(db_only=False):
 
 
 class Ways():
-    count = 0
     groups = set()
 
     def __init__(self, db):
-        self.db = db.write_batch()
+        self.db = db
 
     def way(self, ways):
         for id, tags, refs in ways:
@@ -87,14 +86,6 @@ class Ways():
                 tags['OSM_ID'] = 'way/' + id
                 self.db.put(id, json.dumps([refs, tags]))
                 self.put_refs(refs)
-                self.count = self.count + 1
-
-        if self.count > 200000:
-            self.batch_write()
-
-    def batch_write(self):
-        self.db.write()
-        self.count = 0
 
     def put_refs(self, refs):
         for ref in refs:
@@ -140,28 +131,14 @@ class Nodes():
 
 
 class Coords():
-    count = 0
-
     def __init__(self, db, needed):
-        self.db = db.write_batch()
+        self.db = db
         self.needed = needed
 
     def coord(self, coords):
         for id, lat, lon in coords:
-            try:
-                if round_down(id, args['group_size']) in self.needed:
-                    self.db.put(str(id), str(lat) + ',' + str(lon))
-                    self.count = self.count + 1
-            except Exception, e:
-                print e + ': ' + str(id)
-
-        if self.count > 3000000:
-            # ~30MB per million in mem
-            self.batch_write()
-
-    def batch_write(self):
-        self.db.write()
-        self.count = 0
+            if round_down(id, args['group_size']) in self.needed:
+                self.db.put(str(id), str(lat) + ',' + str(lon))
 
 
 def tag_filter(tags):
@@ -182,6 +159,9 @@ def tag_filter(tags):
 
 
 def round_down(num, divisor):
+    if divisor == 0:
+        divisor = 1
+
     return num - (num % divisor)
 
 
@@ -295,8 +275,18 @@ if __name__ == '__main__':
     shapely.speedups.enable()
 
     file_prep()
-    waysDB = plyvel.DB('ways.ldb', create_if_missing=True, error_if_exists=True)
-    coordsDB = plyvel.DB('coords.ldb', create_if_missing=True, error_if_exists=True)
+
+    waysDB = plyvel.DB(
+        'ways.ldb',
+        create_if_missing=True,
+        error_if_exists=True,
+        write_buffer_size=1048576*1024)
+
+    coordsDB = plyvel.DB(
+        'coords.ldb',
+        create_if_missing=True,
+        error_if_exists=True,
+        write_buffer_size=1048576*1024)
 
     output = open(args['out'], 'a')
     output.write('{"type": "FeatureCollection", "features": [\n')
@@ -313,14 +303,12 @@ if __name__ == '__main__':
     print 'parsing ways and passing through nodes'
     p.parse(args['source'])
 
-    ways.batch_write()
     nodes.batch_write()
 
     p = OSMParser(coords_callback=coords.coord)
     print 'parsing coordinates'
     p.parse(args['source'])
 
-    coords.batch_write()
     del p, ways, nodes, coords
 
     print 'processing...'

@@ -3,9 +3,8 @@ Extracts and builds points of interest from OpenStreetMap data. It extracts node
 settings.py contains a list of all the features to be extracted. It's made up of a sensible default of what I consider useful features but it is also easily edittable to your liking. example-dc.geojson is an example of the default output from a 55mb .osm file of an area of Washington DC.
 
 ###Installation
-1. `git clone https://github.com/aaronlidman/openstreetPOIs.git`
-2. `cd openstreetPOIs`
-3. Mac or Ubuntu? (homebrew or apt required)
+1. `git clone https://github.com/aaronlidman/openstreetPOIs.git && cd openstreetPOIs`
+2. Mac or Ubuntu? (homebrew or apt required)
 	- Mac
 		- `brew update`
 		- `brew install python geos leveldb protobuf`
@@ -13,8 +12,8 @@ settings.py contains a list of all the features to be extracted. It's made up of
 		- 12.10 minimum required, plyvel has a problem with 12.04. [details](https://github.com/wbolster/plyvel/commit/16880a9d2143d53662d0d57ca2b3c7dcc6d6334f)
 		- `apt-get update`
 		- `apt-get -y install python-dev python-pip build-essential libprotobuf-dev protobuf-compiler libleveldb-dev libgeos-dev`
-4. Optional. Setup your python virtualenv.
-5. `pip install --requirement requirements.txt`
+3. Optional. Setup your python virtualenv.
+4. `pip install --requirement requirements.txt`
 
 ### Dependencies
 - [LevelDB](https://code.google.com/p/leveldb/)
