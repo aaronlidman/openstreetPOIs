@@ -1,4 +1,4 @@
-Extracts and builds points of interest from OpenStreetMap data. It extracts nodes with tags but also builds areas (buildings, lakes, parks, etc..) and uses the centroid as the point for that feature. The aim is to have a scalable way of parsing any osm file for points, quickly and without the need of setting up a database like PostGIS.
+openstreetPOIs extracts and builds points of interest from OpenStreetMap data. It extracts nodes with tags but also builds areas (buildings, lakes, parks, etc..) and uses the centroid as the point for that feature. The aim is to have a scalable way of parsing any osm file for points, quickly and without the need of setting up a database like PostGIS.
 
 settings.py contains a list of all the features to be extracted. It's made up of a sensible default of what I consider useful features but it is also easily edittable to your liking. example-dc.geojson is an example of the default output from a 55mb .osm file of an area of Washington DC.
 
@@ -27,9 +27,21 @@ Get your desired OSM data ([good starting point](http://wiki.openstreetmap.org/w
 
 ### Options
 - `-h, --help` - show the help message and exit
-- `-o OUT, --out OUT` - Destination filename to create (no extension, .extension gets added on) (default: output)
+- `--output OUT` - Destination filename to create (no extension, .extension gets added on) (default: output)
 - `--overwrite` - Overwrite any conflicting files.
 - `--require-name` - Only output items that have the 'name' tag defined.
-- `--group-size` - How large of a group to use for coordinate lookup. (default: 20) A balance between RAM and disk usage to use for coordinate lookups. lower = more RAM, higher = more disk.
+- `--groupsize` - How large of a group to use for coordinate lookup. (default: 20) lower = more RAM, higher = more disk.
+- `--precache` - Precache all coordinates. Removes the coordinate lookup process which uses lots of RAM.
+
+### Tips
+Depending on the hardware you use and options you specify, processing time can vary a lot.
+- This process relies very much on your hard drive, the faster your hard drive the better. My results are typically twice as fast with an SSD.
+- RAM can be a limiting factor while parsing large files. Increase the groupsize option to help mitigate this. The larger the groupsize the less RAM that will be used but this comes at the cost of using your hard drive, which is slower. Anything from one to a couple million might help.
+    - ex. 54MB dc-baltimore PBF
+        - groupsize 1: peak of 630mb RAM, took 97 seconds
+        - groupsize 20: peak of 560mb RAM, took 102 seconds
+        - this example isn't great but when dealing with files larger than say 1GB it really makes a difference
+- The output is the default OSM data projection, EPSG:4326 aka WGS84.
+    - I might add reprojections later, through pyproj.
 
 ### BSD License

@@ -40,10 +40,13 @@ def prep_args():
     parser.add_argument(
         '--groupsize',
         help='How large of a group to use for coordinate lookup. (default: 20) '
-        'A balance between RAM and disk usage to use for coordinate lookups. '
         'lower = more RAM, higher = more disk',
         type=int,
         default=20)
+    parser.add_argument(
+        '--precache',
+        help='Precache all coordinates. Removes the coordinate lookup process which uses lots of RAM.',
+        action='store_true')
 
     return parser
 
@@ -84,7 +87,9 @@ class Ways():
                 id = str(id)
                 tags['OSM_ID'] = 'way/' + id
                 self.db.put(id, json.dumps([refs, tags]))
-                self.put_refs(refs)
+
+                if not args['precache']:
+                    self.put_refs(refs)
 
     def put_refs(self, refs):
         for ref in refs:
@@ -138,6 +143,10 @@ class Coords():
         for id, lat, lon in coords:
             if round_down(id, args['groupsize']) in self.needed:
                 self.db.put(str(id), str(lat) + ',' + str(lon))
+
+    def coord_precache(self, coords):
+        for id, lat, lon in coords:
+            self.db.put(str(id), str(lat) + ',' + str(lon))
 
 
 def tag_filter(tags):
@@ -297,6 +306,11 @@ if __name__ == '__main__':
     nodes = Nodes(output)
     coords = Coords(coordsDB, ways.groups)
 
+    if args['precache']:
+        p = OSMParser(coords_callback=coords.coord_precache)
+        print 'caching all coordinates'
+        p.parse(args['source'])
+
     p = OSMParser(
         ways_callback=ways.way,
         ways_tag_filter=tag_filter,
@@ -307,9 +321,10 @@ if __name__ == '__main__':
 
     nodes.batch_write()
 
-    p = OSMParser(coords_callback=coords.coord)
-    print 'parsing coordinates'
-    p.parse(args['source'])
+    if not args['precache']:
+        p = OSMParser(coords_callback=coords.coord)
+        print 'parsing coordinates'
+        p.parse(args['source'])
 
     del p, ways, nodes, coords
 
