@@ -1,6 +1,6 @@
 openstreetPOIs extracts and builds points of interest from OpenStreetMap data. It extracts nodes with tags but also builds areas (buildings, lakes, parks, etc..) and uses the centroid as the point for that feature. The aim is to have a scalable way of parsing any osm file for points, quickly and without the need of setting up a database like PostGIS.
 
-settings.py contains a list of all the features to be extracted. It's made up of a sensible default of what I consider useful features but it is also easily edittable to your liking. example-dc.geojson is an example of the default output from a 55mb .osm file of an area of Washington DC.
+settings.py contains a list of all the features to be extracted. It's made up of a sensible default of what I consider useful features but it is also easily edittable to your liking. example-dc.geojson is an example of the default output from a 18mb .osm file of an area of Washington DC.
 
 ###Installation
 1. `git clone https://github.com/aaronlidman/openstreetPOIs.git && cd openstreetPOIs`
@@ -41,7 +41,7 @@ Depending on the hardware you use and options you specify, processing time can v
         - groupsize 1: peak of 630mb RAM, took 97 seconds
         - groupsize 20: peak of 560mb RAM, took 102 seconds
         - this example isn't great but when dealing with files larger than say 1GB it really makes a difference
-- The output is the default OSM data projection, EPSG:4326 aka WGS84.
+- The output is in the default OSM data projection, EPSG:4326 aka WGS84.
     - I might add reprojections later, through pyproj.
 
 ### BSD License
