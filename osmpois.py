@@ -23,8 +23,7 @@ def prep_args():
         'source',
         help='Source file to parse (.pbf, .osm.bz2, or .osm)')
     parser.add_argument(
-        '-o',
-        '--out',
+        '--output',
         help='Destination filename to create (no extension, .geojson gets added on) (default: output)',
         default='output')
     parser.add_argument(
@@ -39,7 +38,7 @@ def prep_args():
         '--profile',
         action='store_true')
     parser.add_argument(
-        '--group-size',
+        '--groupsize',
         help='How large of a group to use for coordinate lookup. (default: 20) '
         'A balance between RAM and disk usage to use for coordinate lookups. '
         'lower = more RAM, higher = more disk',
@@ -49,7 +48,7 @@ def prep_args():
     return parser
 
 args = vars(prep_args().parse_args())
-args['out'] = args['out'] + '.geojson'
+args['output'] = args['output'] + '.geojson'
 
 if args['profile']:
     print args
@@ -57,13 +56,13 @@ if args['profile']:
 
 def file_prep(db_only=False):
     if not db_only:
-        if os.path.isfile(args['out']):
+        if os.path.isfile(args['output']):
             if args['overwrite']:
-                os.remove(args['out'])
+                os.remove(args['output'])
             else:
-                print 'overwrite conflict with file: ' + args['out']
-                print ('remove/rename ' + args['out'] +
-                       ', name a different output file with --out, or add the --overwrite option')
+                print 'overwrite conflict with file: ' + args['output']
+                print ('remove/rename ' + args['output'] +
+                       ', name a different output file with --output, or add the --overwrite option')
                 sys.exit()
 
     if os.path.isdir('coords.ldb'):
@@ -89,7 +88,7 @@ class Ways():
 
     def put_refs(self, refs):
         for ref in refs:
-            self.groups.add(round_down(ref, args['group_size']))
+            self.groups.add(round_down(ref, args['groupsize']))
 
 
 class Nodes():
@@ -137,7 +136,7 @@ class Coords():
 
     def coord(self, coords):
         for id, lat, lon in coords:
-            if round_down(id, args['group_size']) in self.needed:
+            if round_down(id, args['groupsize']) in self.needed:
                 self.db.put(str(id), str(lat) + ',' + str(lon))
 
 
@@ -161,6 +160,9 @@ def tag_filter(tags):
 def round_down(num, divisor):
     if divisor == 0:
         divisor = 1
+
+    if divisor == 1:
+        return num
 
     return num - (num % divisor)
 
@@ -189,7 +191,6 @@ def process(output):
 
 
 def all_done(necessary_arg):
-    print len(necessary_arg)
     process.writeDone = True
 
 
@@ -216,7 +217,8 @@ def build_POIs((id, string)):
             }
 
             queue.put(json.dumps(feature))
-            return id
+            # return id
+            # that id would be a good way to count for a progress indicator
 
 
 def build_polygon(refs):
@@ -288,7 +290,7 @@ if __name__ == '__main__':
         error_if_exists=True,
         write_buffer_size=1048576*1024)
 
-    output = open(args['out'], 'a')
+    output = open(args['output'], 'a')
     output.write('{"type": "FeatureCollection", "features": [\n')
 
     ways = Ways(waysDB)
@@ -300,7 +302,7 @@ if __name__ == '__main__':
         ways_tag_filter=tag_filter,
         nodes_callback=nodes.node,
         nodes_tag_filter=tag_filter)
-    print 'parsing ways and passing through nodes'
+    print 'parsing ways and nodes'
     p.parse(args['source'])
 
     nodes.batch_write()
@@ -313,10 +315,10 @@ if __name__ == '__main__':
 
     print 'processing...'
     process(output)
-    file_prep(True)
     output.write('\n]}')
+    file_prep(True)
 
-    print 'saved as: ' + str(args['out'])
+    print 'saved as: ' + str(args['output'])
 
     if args['profile']:
         prW.disable()
