@@ -1,13 +1,13 @@
-from cProfile import Profile
-from pstats import Stats
+import resource
+import cProfile
+import pstats
 
-from multiprocessing import Queue, Pool
-from os.path import isfile, isdir
-from os import remove
-from shutil import rmtree
-from sys import exit
-from time import time, sleep
-from argparse import ArgumentParser
+import multiprocessing
+import os
+import shutil
+import sys
+import time
+import argparse
 import plyvel
 import ujson as json
 from imposm.parser import OSMParser
@@ -17,7 +17,7 @@ from settings import wantedTags
 
 
 def prep_args():
-    parser = ArgumentParser()
+    parser = argparse.ArgumentParser()
 
     parser.add_argument(
         'source',
@@ -59,19 +59,19 @@ if args['profile']:
 
 def file_prep(db_only=False):
     if not db_only:
-        if isfile(args['output']):
+        if os.path.isfile(args['output']):
             if args['overwrite']:
-                remove(args['output'])
+                os.remove(args['output'])
             else:
                 print 'overwrite conflict with file: ' + args['output']
                 print ('remove/rename ' + args['output'] +
                        ', name a different output file with --output, or add the --overwrite option')
-                exit()
+                sys.exit()
 
-    if isdir('coords.ldb'):
-        rmtree('coords.ldb')
-    if isdir('ways.ldb'):
-        rmtree('ways.ldb')
+    if os.path.isdir('coords.ldb'):
+        shutil.rmtree('coords.ldb')
+    if os.path.isdir('ways.ldb'):
+        shutil.rmtree('ways.ldb')
 
 
 class Ways():
@@ -82,7 +82,7 @@ class Ways():
 
     def way(self, ways):
         for id, tags, refs in ways:
-            if len(tags) and 250 > len(refs) > 1 and refs[0] == refs[-1]:
+            if len(tags) and len(refs) > 1 and refs[0] == refs[-1]:
                 # circular ways only
                 id = str(id)
                 tags['OSM_ID'] = 'way/' + id
@@ -183,11 +183,11 @@ def include_queue(queue):
 def process(output):
     process.writeDone = False
 
-    queue = Queue()
-    pool = Pool(None, include_queue, [queue], 1000000)
+    queue = multiprocessing.Queue()
+    pool = multiprocessing.Pool(None, include_queue, [queue], 1000000)
     go = pool.map_async(build_POIs, waysDB.iterator(), callback=all_done)
 
-    sleep(1)
+    time.sleep(1)
     # let the processes start and queues fill up a bit
 
     while True:
@@ -275,14 +275,12 @@ def write(file, queue):
         # else it returns and runs again immediately
         # this is to clear out any last items in the queue
     else:
-        sleep(0.05)
+        time.sleep(0.05)
 
 
 if __name__ == '__main__':
-    start = time()
-
     if args['profile']:
-        prW = Profile()
+        prW = cProfile.Profile()
         prW.enable()
 
     shapely.speedups.enable()
@@ -312,7 +310,6 @@ if __name__ == '__main__':
         p = OSMParser(coords_callback=coords.coord_precache)
         print 'caching all coordinates'
         p.parse(args['source'])
-        del coords
 
     p = OSMParser(
         ways_callback=ways.way,
@@ -328,9 +325,8 @@ if __name__ == '__main__':
         p = OSMParser(coords_callback=coords.coord)
         print 'parsing coordinates'
         p.parse(args['source'])
-        del coords
 
-    del p, ways, nodes
+    del p, ways, nodes, coords
 
     print 'processing...'
     process(output)
@@ -338,10 +334,11 @@ if __name__ == '__main__':
     file_prep(True)
 
     print 'saved as: ' + str(args['output'])
-    print 'took ' + str(round(time() - start, 2)) + ' seconds'
 
     if args['profile']:
         prW.disable()
-        ps = Stats(prW)
+        print round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 9.53674e-7, 2)
+
+        ps = pstats.Stats(prW)
         ps.sort_stats('time')
         a = ps.print_stats(30)
