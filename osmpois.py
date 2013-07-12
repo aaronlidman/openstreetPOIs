@@ -1,8 +1,7 @@
-import resource
 import cProfile
 import pstats
 
-import multiprocessing
+import multiprocessing as mp
 import os
 import shutil
 import sys
@@ -82,7 +81,7 @@ class Ways():
 
     def way(self, ways):
         for id, tags, refs in ways:
-            if len(tags) and len(refs) > 1 and refs[0] == refs[-1]:
+            if len(tags) and 250 > len(refs) > 1 and refs[0] == refs[-1]:
                 # circular ways only
                 id = str(id)
                 tags['OSM_ID'] = 'way/' + id
@@ -183,8 +182,8 @@ def include_queue(queue):
 def process(output):
     process.writeDone = False
 
-    queue = multiprocessing.Queue()
-    pool = multiprocessing.Pool(None, include_queue, [queue], 1000000)
+    queue = mp.Queue()
+    pool = mp.Pool(None, include_queue, [queue], 1000000)
     go = pool.map_async(build_POIs, waysDB.iterator(), callback=all_done)
 
     time.sleep(1)
@@ -279,6 +278,8 @@ def write(file, queue):
 
 
 if __name__ == '__main__':
+    start = time.time()
+
     if args['profile']:
         prW = cProfile.Profile()
         prW.enable()
@@ -310,6 +311,7 @@ if __name__ == '__main__':
         p = OSMParser(coords_callback=coords.coord_precache)
         print 'caching all coordinates'
         p.parse(args['source'])
+        del coords
 
     p = OSMParser(
         ways_callback=ways.way,
@@ -325,8 +327,9 @@ if __name__ == '__main__':
         p = OSMParser(coords_callback=coords.coord)
         print 'parsing coordinates'
         p.parse(args['source'])
+        del coords
 
-    del p, ways, nodes, coords
+    del p, ways, nodes
 
     print 'processing...'
     process(output)
@@ -334,11 +337,10 @@ if __name__ == '__main__':
     file_prep(True)
 
     print 'saved as: ' + str(args['output'])
+    print 'took ' + str(round(time.time() - start, 2)) + ' seconds'
 
     if args['profile']:
         prW.disable()
-        print round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 9.53674e-7, 2)
-
         ps = pstats.Stats(prW)
         ps.sort_stats('time')
         a = ps.print_stats(30)
