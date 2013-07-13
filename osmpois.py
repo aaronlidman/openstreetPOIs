@@ -45,7 +45,13 @@ def prep_args():
     parser.add_argument(
         '--precache',
         help='Precache all coordinates. Removes the coordinate lookup process which uses lots of RAM.',
-        action='store_true')
+        action='store_true'),
+    parser.add_argument(
+        '--max-nodes',
+        help='Maximum number of nodes in a way to consider for simplification. '
+        'Anything over max is skipped. (default: 250)',
+        type=int,
+        default=250)
 
     return parser
 
@@ -63,7 +69,7 @@ def file_prep(db_only=False):
                 os.remove(args['output'])
             else:
                 print 'overwrite conflict with file: ' + args['output']
-                print ('remove/rename ' + args['output'] +
+                print ('remove or rename ' + args['output'] +
                        ', name a different output file with --output, or add the --overwrite option')
                 sys.exit()
 
@@ -81,7 +87,7 @@ class Ways():
 
     def way(self, ways):
         for id, tags, refs in ways:
-            if len(tags) and 250 > len(refs) > 1 and refs[0] == refs[-1]:
+            if len(tags) and args['max_nodes'] > len(refs) > 1 and refs[0] == refs[-1]:
                 # circular ways only
                 id = str(id)
                 tags['OSM_ID'] = 'way/' + id
@@ -194,7 +200,7 @@ def process(output):
             break
 
     go.wait()
-    pool.close()
+    pool.terminate()
     pool.join()
 
 
