@@ -2,10 +2,10 @@ import cProfile
 import pstats
 
 import multiprocessing as mp
-import os
-import shutil
-import sys
-import time
+from os import path, remove
+from shutil import rmtree
+from sys import exit
+from time import time, sleep
 import argparse
 import plyvel
 import ujson as json
@@ -52,7 +52,6 @@ def prep_args():
         'Anything over max is skipped. (default: 250)',
         type=int,
         default=250)
-
     return parser
 
 args = vars(prep_args().parse_args())
@@ -64,19 +63,19 @@ if args['profile']:
 
 def file_prep(db_only=False):
     if not db_only:
-        if os.path.isfile(args['output']):
+        if path.isfile(args['output']):
             if args['overwrite']:
-                os.remove(args['output'])
+                remove(args['output'])
             else:
                 print 'overwrite conflict with file: ' + args['output']
                 print ('remove or rename ' + args['output'] +
                        ', name a different output file with --output, or add the --overwrite option')
-                sys.exit()
+                exit()
 
-    if os.path.isdir('coords.ldb'):
-        shutil.rmtree('coords.ldb')
-    if os.path.isdir('ways.ldb'):
-        shutil.rmtree('ways.ldb')
+    if path.isdir('coords.ldb'):
+        rmtree('coords.ldb')
+    if path.isdir('ways.ldb'):
+        rmtree('ways.ldb')
 
 
 class Ways():
@@ -187,13 +186,10 @@ def include_queue(queue):
 
 def process(output):
     process.writeDone = False
-
     queue = mp.Queue()
     pool = mp.Pool(None, include_queue, [queue], 1000000)
     go = pool.map_async(build_POIs, waysDB.iterator(), callback=all_done)
-
-    time.sleep(1)
-    # let the processes start and queues fill up a bit
+    sleep(1)  # let the processes start and queues fill up a bit
 
     while True:
         if write(output, queue):
@@ -210,12 +206,12 @@ def all_done(necessary_arg):
 
 def build_POIs((id, string)):
     queue = build_POIs.queue
-
     refs, tags = json.loads(string)
     polygon = build_polygon(refs)
 
     if polygon and polygon.is_valid:
         tags['POI_AREA'] = polygon.area * 1000000
+            # just for ease of use
 
         if tags['POI_AREA'] > 0.0:
             centroid = polygon.centroid
@@ -264,7 +260,6 @@ def build_polygon(refs):
 
 
 def write(file, queue):
-    # no .qsize on OS X means we use sleep(), lame
     toFile = []
 
     while not queue.empty():
@@ -280,18 +275,16 @@ def write(file, queue):
         # else it returns and runs again immediately
         # this is to clear out any last items in the queue
     else:
-        time.sleep(0.05)
+        sleep(0.05)
 
 
 if __name__ == '__main__':
-    start = time.time()
-
     if args['profile']:
         prW = cProfile.Profile()
         prW.enable()
 
+    start = time()
     shapely.speedups.enable()
-
     file_prep()
 
     waysDB = plyvel.DB(
@@ -317,6 +310,7 @@ if __name__ == '__main__':
         p = OSMParser(coords_callback=coords.coord_precache)
         print 'caching all coordinates'
         p.parse(args['source'])
+        coords = None
         del coords
 
     p = OSMParser(
@@ -333,6 +327,7 @@ if __name__ == '__main__':
         p = OSMParser(coords_callback=coords.coord)
         print 'parsing coordinates'
         p.parse(args['source'])
+        coords = None
         del coords
 
     del p, ways, nodes
@@ -343,7 +338,7 @@ if __name__ == '__main__':
     file_prep(True)
 
     print 'saved as: ' + str(args['output'])
-    print 'took ' + str(round(time.time() - start, 2)) + ' seconds'
+    print 'took ' + str(round(time() - start, 2)) + ' seconds'
 
     if args['profile']:
         prW.disable()
