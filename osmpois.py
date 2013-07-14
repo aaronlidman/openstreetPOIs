@@ -30,9 +30,11 @@ def prep_args():
         help='Overwrite any conflicting files.',
         action='store_true')
     parser.add_argument(
-        '--require-name',
-        help='Only output items that have a defined \'name\' tag.',
-        action='store_true')
+        '--require-key',
+        help='Only output items that have a defined key. '
+        'ex. --require-key name, only outputs items that have a name',
+        type=str,
+        default=False)
     parser.add_argument(
         '--profile',
         action='store_true')
@@ -154,7 +156,7 @@ class Coords():
 
 
 def tag_filter(tags):
-    if args['require_name'] and 'name' not in tags:
+    if args['require_key'] and args['require_key'] not in tags:
         for key in tags.keys():
             del tags[key]
             # "functions should modify the dictionary in-place"

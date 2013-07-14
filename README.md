@@ -33,7 +33,7 @@ Get your desired OSM data ([good starting point](http://wiki.openstreetmap.org/w
 - `-h, --help` - show the help message and exit
 - `--output OUT` - Destination filename to create (no extension, .extension gets added on) (default: output)
 - `--overwrite` - Overwrite any conflicting files.
-- `--require-name` - Only output items that have the 'name' tag defined.
+- `--require-key` - Only output items that have the 'name' tag defined.
 - `--groupsize` - How large of a group to use for coordinate lookup. (default: 20) lower = more RAM, higher = more disk.
 - `--precache` - Precache all coordinates. Removes the coordinate lookup process which uses lots of RAM.
 - `--max-nodes` - Maximum number of nodes in a way to consider for simplification. Anything over max is skipped. (default: 250) To include everything, no matter how large, set to 2000.
