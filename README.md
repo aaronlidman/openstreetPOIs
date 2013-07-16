@@ -6,6 +6,12 @@ settings.py contains a list of all the features to be extracted. It's made up of
 
 example-dc.geojson is an example of the default output from a 18mb .osm file of an area of Washington DC.
 
+### Sample Data
+These were all created from [Geofabrik extracts](http://download.geofabrik.de/) on July 12, 2013 with a slightly older version of openstreetPOIs.
+- [California](https://s3.amazonaws.com/aaronlidman-mapping/california.geojson) - 252 mb
+- [Western United States](https://s3.amazonaws.com/aaronlidman-mapping/west2.geojson) - 372 mb
+- [North America](https://s3.amazonaws.com/aaronlidman-mapping/na.geojson) - 2072 mb
+
 ###Installation
 1. `git clone https://github.com/aaronlidman/openstreetPOIs.git && cd openstreetPOIs`
 2. Mac or Ubuntu? (homebrew or apt required)

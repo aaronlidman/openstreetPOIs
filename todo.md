@@ -1,3 +1,15 @@
+- prevent name only points
+
+- join split writing methods
+	- currently one for nodes one for ways, makes common output options difficult
+
+- reduce POI_AREA precision
+	- 5? 6?
+
+- centroid within area
+	- fall back to representive point?
+	- inner centroid would be better
+
 - RAM option
 	- option to set larger write buffers
 	- write buffer for leveldb and final output.geojson
@@ -25,8 +37,12 @@
 
 - key order of significance
 
-- merge keys
-	- least common identifier/ single category
+- name length option
+	- tag['NAME_LENGTH'] = len(name)
+	- useful for rendering
+
+- collapse keys
+	- least common identifier/single category
 	- maki + ? icons
 		- fallback to osm default set for missing? mono tho
 		- noun project?
@@ -37,5 +53,5 @@
 	- open hours, lost cause?
 
 - dedupe
-	- possibly, way in the future
+	- possibly, lots of overhead + more dependencies
 	- output list of dupes to be fixed on OSM
